@@ -1,17 +1,42 @@
 # Weisfeiler-Leman Graph Kernels for AMR Graph Similarity
 
-The repository contains python code for metric of AMR graph similarity.
+The repository contains python code for metric of AMR graph similarity. Modifications for use in Jon's AMR parsing experiments.
 
 ## Requirements
 
-Install the following python packages (with pip or conda):
+Create and activate the conda environment:
 
 ```
-numpy (tested: 1.19.4)
-scipy (tested: 1.1.0) 
-networkx (tested: 2.5)
-gensim (tested: 3.8.3)
-penman (tested 1.1.0)
+conda env create -f environment.yml
+```
+
+## Running the server
+
+Instructions for running the server on Ego using `screen`.
+
+Existing screen:
+
+```
+screen -r wwlk_server
+./run_server.sh
+```
+
+Create a new screen:
+
+```
+screen -S wwlk_server
+cd weisfeiler-leman-amr-metrics
+conda deactivate
+source activate wl-kernel
+./run_server.sh
+```
+
+(ctrl+a+d to detach from the screen.)
+
+Requests will be of the form
+
+```
+curl localhost:5000/ -H 'Content-Type: application/json' -d '{"kernel": "wwlk", "amr1": "(vv1 / bake :ARG0 (vv2 / man :mod (vv3 / big)))", "amr2": "(vv1 / bake :ARG0 (vv2 / woman))"}'
 ```
 
 ## Computing AMR metrics
