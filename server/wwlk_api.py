@@ -36,9 +36,9 @@ def amr_sim():
 
     if kernel == 'wlk' or kernel == 'wwlk-theta' or kernel == 'random-walk':
         logging.warning(f"Kernel '{kernel}' is unimplemented. Similarity score will be based on WWLK.")
-        file_to_run = 'src/main_wlk_wasser.py'
+        file_to_run = '../src/main_wlk_wasser.py'
     else:
-        file_to_run = 'src/main_wlk_wasser.py'
+        file_to_run = '../src/main_wlk_wasser.py'
         logging.info(f"Running similarity kernel '{kernel}' using file '{file_to_run}'")
     
     # prep files for ingestion into wwlk script
