@@ -34,9 +34,12 @@ def amr_sim():
     amr2 = info['amr2']
     # embedding_filepath = info['embedding_filepath']
 
-    if kernel == 'wlk' or kernel == 'wwlk-theta' or kernel == 'random-walk':
+    if kernel == 'wwlk-theta' or kernel == 'random-walk':
         logging.warning(f"Kernel '{kernel}' is unimplemented. Similarity score will be based on WWLK.")
         file_to_run = '../src/main_wlk_wasser.py'
+    elif kernel == 'wlk':
+        file_to_run = '../src/main_wlk.py'
+        logging.info(f"Running similarity kernel '{kernel}' using file '{file_to_run}'")
     else:
         file_to_run = '../src/main_wlk_wasser.py'
         logging.info(f"Running similarity kernel '{kernel}' using file '{file_to_run}'")
@@ -65,7 +68,3 @@ def amr_sim():
 
     return {'score': result}
 
-
-    '''
-curl localhost:5000/ -H 'Content-Type: application/json' -d '{"kernel": "wwlk", "amr1": "(vv1 / bake :ARG0 (vv2 / man :mod (vv3 / big)))", "amr2": "(vv1 / bake :ARG0 (vv2 / woman))", "embedding_filepath": "src/embeddings.pkl"}'
-    '''
