@@ -1,42 +1,19 @@
 # Weisfeiler-Leman Graph Kernels for AMR Graph Similarity
 
-The repository contains python code for metric of AMR graph similarity. Modifications for use in Jon's AMR parsing experiments.
+The repository contains python code for metrics of AMR graph similarity.
+
+**New in Version 0.2**: faster, more parameters, increase stabiltiy.
 
 ## Requirements
 
-Create and activate the conda environment:
+Install the following python packages (with pip or conda):
 
 ```
-conda env create -f environment.yml
-```
-
-## Running the server
-
-Instructions for running the server on Ego using `screen`.
-
-Existing screen:
-
-```
-screen -r wwlk_server
-./run_server.sh
-```
-
-Create a new screen:
-
-```
-screen -S wwlk_server
-cd weisfeiler-leman-amr-metrics
-conda deactivate
-source activate wl-kernel
-./run_server.sh
-```
-
-(ctrl+a+d to detach from the screen.)
-
-Requests will be of the form
-
-```
-curl localhost:5000/ -H 'Content-Type: application/json' -d '{"kernel": "wwlk", "amr1": "(vv1 / bake :ARG0 (vv2 / man :mod (vv3 / big)))", "amr2": "(vv1 / bake :ARG0 (vv2 / woman))"}'
+numpy (tested: 1.19.4)
+scipy (tested: 1.1.0) 
+networkx (tested: 2.5)
+gensim (tested: 3.8.3)
+penman (tested 1.1.0)
 ```
 
 ## Computing AMR metrics
@@ -52,14 +29,16 @@ cd src
 python main_wlk_wasser.py -a <amr_file> -b <amr_file>
 ```
 
-### Return AMR n:m alignment projected to original AMR nodes
+### Return AMR n:m alignment:
 
 ```
 cd src
-python main_wlk_wasser_alignment.py -a <amr_file> -b <amr_file>
+python main_wlk_wasser.py -a <amr_file> -b <amr_file> -output_type score_alignment
 ```
 
-### Learning edge parameters for control
+This prints the scores and many-many node alignments, with flow and cost information. 
+
+### Learning edge weights
 
 ```
 cd src
@@ -74,7 +53,7 @@ optimize the parameters. In the end the script will return predictions for
 `-a_test <amr_file>` vs. `b_test <amr_file>`.
 
 
-### Symbolic AMR similarity
+### Symbolic (Structural) AMR similarity
 
 ```
 cd src
@@ -83,34 +62,70 @@ python main_wlk.py -a <amr_file> -b <amr_file>
 
 ## Tips
 
-### Parsing evaluation
+### Increase numerical stability
 
-Currently, only `main_wlk.py`, i.e., the symbolic WLK provides deterministic results.
+Currently, only `main_wlk.py`, i.e., the structural WLK provides fully deterministic results.
 Since in current Wasserstein WLK the edges and words not in GloVe are initialized randomly, 
-it can lead to some variation in the predictions. If more stable results for WWLK are desired
-, consider setting fixed edge weights or use an ensemble average score with, e.g.:
+it can lead to some variation in the predictions. More stable results for WWLK and alignments are desired, 
+consider using the new `-stability_level` parameter, e.g.:
 
 ```
 cd src
-python main_wlk_wasser.py -a <amr_parse_file> -b <amr_gold_file> \
-                          -n_ensemble 5 --corpus_score \
-                          -random_init_relation random_uniform
+python main_wlk_wasser.py -a <amr_predicted> -b <amr_ref> \
+                          -stability_level 15
 ```
 
-### More Arguments
+### Parsing evaluation
 
-There are also more arguments that can be set, e.g., 
-use different word embeddings (FastText, word2vec, etc.), 
-you can check the options out:
+Use `-stability_level` for increased stability (as above). And a corpus score (currently, only output option is the mean over all scores). A good option for parsing evaluation may be:
+
+```
+python -u m2ain_wlk_wasser.py -a <amr_predicted> -b <amr_ref> \
+                              -output_type score_corpus \
+                              -stability_level 15 -k 2 \
+                              -random_init_relation constant \
+                              --edge_to_node_transform 
+```
+
+This also transforms the graphs to (equivalent) graphs with unlabeled edges (see below), and lets us set constant edge weights.
+
+
+
+### Important Parameters
+
+Some important parameters that can be set according to use-case
+
+- `-w2v_uri <string>`: use different word embeddings (FastText, word2vec, etc.). Current default: `glove-wiki-gigaword-100`.
+- `-k <int>`: Use an int to specify the maximum contextualization level. E.g., If k=5, a node will receive info from nbs that are up to 5 hops away.
+- `-stability_level <int>`: Consider two graphs with a few random parameters. We calculate the expected node distance matrix by sampling parameters `<int>` times. This increases stability of results but also increases runtime. A good trade-off may be 10 or 20. 
+- `-communication_direction <string>`: There are three options. Consider (x, :arg0, y), where :arg0 is directed. Option `fromin` means y receives from x. Option `fromout` means that x receives from y. `both` (default value) means `fromin` *and* `fromout`.
+- `--edge_to_node_transform`: This flag transforms the edge-labeled AMR graph into an (equivalent) graph with unlabeled edges. E.g., (1, arg1, 2), (1, arg2, 3) --> (1, 4), (1, 5), (4, 2), (5, 3), where 4 has label arg1 and 5 has label arg2.
+
+
+There are also more arguments that can be set, you can check more options out:
 
 ```
 cd src
 python main_wlk_wasser.py --help
 ```
 
+### Benchmarking
+
+Some scores on BAMBOO of current constellations: see `info/`
+
+Approx Processing TIME 1000 graph pairs: 
+
+| method | time (seconds) |
+|  ----  |  ------------- |
+| WLK    | 0.5            |
+| WWLK   | 5              |
+
+1000 graph pairs WWLK need 5 seconds
+
 ## Version notes
 
 - 0.1: initial release
+- 0.2: speed increase by making better use of numpy, more stability by distance matrix sampling, labeled to unlabeld graph transform, refactored code
 
 ## Citation
 
