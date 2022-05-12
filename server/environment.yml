@@ -88,5 +88,6 @@ dependencies:
   - pip:
     - penman==1.2.1
     - python-levenshtein==0.12.2
+    - pyyaml
 prefix: /data/anaconda3/envs/wl-kernel
 

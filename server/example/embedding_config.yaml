@@ -1,0 +1,14 @@
+---
+# Node embeddings
+# format: {'word': numpy array}
+# for now, these are just word embeddings, not amr tokens (ie no pb predicates)
+custom_node_embeddings: True
+node_embeddings_filepath: /Users/elizabeth/Code/projects/graph_kernels/wlk-server-development/weisfeiler-leman-amr-metrics/node_embeddings.pkl
+
+# Edge embeddings
+# format:
+# edge_embeddings: numpy array of numpy arrays, one for each edge
+# edge_embeddings_keys: {':ARG0': index in edge_embeddings}
+custom_edge_embeddings: True
+edge_embeddings_filepath: /Users/elizabeth/Code/projects/graph_kernels/wlk-server-development/weisfeiler-leman-amr-metrics/edge_params.pkl
+edge_embeddings_keys_filepath: /Users/elizabeth/Code/projects/graph_kernels/wlk-server-development/weisfeiler-leman-amr-metrics/edge_params_keys.pkl

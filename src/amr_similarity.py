@@ -64,6 +64,8 @@ class Preprocessor():
 class AmrWasserPreProcessor(Preprocessor):
 
     def __init__(self, w2v_uri='glove-wiki-gigaword-100', 
+                    use_custom_edge_embeddings=False,
+                    edge_params=None, edge_param_keys=None,
                     relation_type="scalar", init="random_uniform",
                     is_resettable=True):
         """Initilize Preprocessor object
@@ -89,23 +91,33 @@ class AmrWasserPreProcessor(Preprocessor):
         self.dim = 100
         self.wordvecs = {}
         self.relation_type = relation_type
-        self.params_ready = False
-        self.init = init
-        self.param_keys = None
-        self.params = None
+        self.custom_edge_embeddings = use_custom_edge_embeddings
+        if not self.custom_edge_embeddings:
+            self.params_ready = False
+            self.init = init
+            self.param_keys = None
+            self.params = None
+            self.is_resettable = is_resettable
+        else:
+            self.params_ready = True
+            self.init = init
+            self.param_keys = edge_param_keys
+            self.params = edge_params
+            self.is_resettable = False
         self.unk_nodes = {}
-        self.is_resettable = is_resettable
         if w2v_uri:
             if not isinstance(w2v_uri, str):
                 self.wordvecs = w2v_uri
                 self.dim = self.wordvecs["dog"].shape[0] 
-            try:
-                self.wordvecs = api.load(w2v_uri)
-                self.dim = self.wordvecs["dog"].shape[0]
-            except ValueError:
-                logger.warning("tried to load word embeddings specified as '{}'.\
-                        these are not available. all embeddings will be random.\
-                        If this is desired, no need to worry.".format(w2v_uri))
+                logger.info("loading custom word embeddings from specified dict. words not present in the specified dict will be instantiated randomly.")
+            else:
+                try:
+                    self.wordvecs = api.load(w2v_uri)
+                    self.dim = self.wordvecs["dog"].shape[0]
+                except ValueError:
+                    logger.warning("tried to load word embeddings specified as '{}'.\
+                            these are not available. all embeddings will be random.\
+                            If this is desired, no need to worry.".format(w2v_uri))
         return None
 
     def _prepare(self, graphs_1, graphs_2):
@@ -255,15 +267,27 @@ class AmrWasserPreProcessor(Preprocessor):
         es = [self.get_edge_labels(g) for g in graphs1]
         es += [self.get_edge_labels(g) for g in graphs2]
         edge_labels = []
+        missing_labels = []
         dic = {}
         for el in es:
             for label in el:
-                if label not in dic:
-                    edge_labels.append(label)
-                    dic[label] = True
-        param = self.sample_edge_label_param(n=len(edge_labels))
-        self.params = param
-        self.param_keys = {edge_labels[idx]:idx for idx in range(len(edge_labels))}
+                if not self.custom_edge_embeddings:
+                    if label not in dic:
+                        edge_labels.append(label)
+                        dic[label] = True
+                else:
+                    if label not in self.param_keys and label not in missing_labels:
+                        missing_labels.append(label)
+        if not self.custom_edge_embeddings:
+            param = self.sample_edge_label_param(n=len(edge_labels))
+            self.params = param
+            self.param_keys = {edge_labels[idx]:idx for idx in range(len(edge_labels))}
+        else:
+            custom_edge_params_len = len(self.params)
+            missing_params = self.sample_edge_label_param(n=len(missing_labels), d=len(self.params[0]))
+            self.params.extend(missing_params)
+            for i, label in enumerate(missing_labels):
+                self.param_keys[label] = custom_edge_params_len + i - 1
         return None
 
     def get_edge_labels(self, G):
@@ -283,7 +307,7 @@ class AmrWasserPreProcessor(Preprocessor):
                 out.append(label)
         return out
 
-    def sample_edge_label_param(self, n=1):
+    def sample_edge_label_param(self, n=1, d=1):
         """initialize edge parameters. 
         
         The idea with min entropy 
@@ -309,14 +333,14 @@ class AmrWasserPreProcessor(Preprocessor):
         
         elif self.init == "random_uniform":
             for _ in range(n):
-                params.append(np.random.uniform(0.20, 0.35, size=(1)))
+                params.append(np.random.uniform(0.20, 0.35, size=(d)))
             params = np.array(params)
         
         elif self.init == "min_entropy": 
             for _ in range(n):
                 sample = []
                 for _ in range(10):
-                    sample.append(np.random.uniform(0.20, 0.35, size=(1)))
+                    sample.append(np.random.uniform(0.20, 0.35, size=(d)))
                 entropies = []
                 for i in range(10):
                     entropies.append(
@@ -491,6 +515,7 @@ class NodeDistanceMatrixGenerator():
     def maybe_has_param(self, label):
         """safe retrieval of an edge parameter"""
         if label not in self.param_keys:
+            logger.debug(f"returning random vector for unknown edge '{label}'")
             return self.unk_edge
         self.active_params[self.param_keys[label]] += 1
         return self.params[self.param_keys[label]]

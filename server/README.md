@@ -32,6 +32,6 @@ source activate wl-kernel
 Requests will be of the form
 
 ```
-curl localhost:5000/ -H 'Content-Type: application/json' -d '{"kernel": "wwlk", "amr1": "(vv1 / bake :ARG0 (vv2 / man :mod (vv3 / big)))", "amr2": "(vv1 / bake :ARG0 (vv2 / woman))"}'
+curl localhost:5000/ -H 'Content-Type: application/json' -d '{"kernel": "wwlk", "amr1": "(vv1 / bake :ARG0 (vv2 / man :mod (vv3 / big)))", "amr2": "(vv1 / bake :ARG0 (vv2 / woman))", "config_filepath": "/Users/elizabeth/Code/projects/graph_kernels/wlk-server-development/weisfeiler-leman-amr-metrics/embedding_config.yaml"}'
 ```
 

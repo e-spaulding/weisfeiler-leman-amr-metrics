@@ -17,7 +17,7 @@ def amr_sim():
         'kernel': 'wwlk', 
         'amr1': '(vv1 / bake :ARG0 (vv2 / man :mod (vv3 / big)))',
         'amr2': '(vv1 / bake :ARG0 (vv2 / woman))',
-        'embedding_filepath': 'embeddings.pkl'
+        'config_filepath': 'embedding_config.yaml'
     }
 
     Returns similarity score
@@ -32,7 +32,6 @@ def amr_sim():
     kernel = info['kernel']
     amr1 = info['amr1']
     amr2 = info['amr2']
-    # embedding_filepath = info['embedding_filepath']
 
     if kernel == 'wwlk-theta' or kernel == 'random-walk':
         logging.warning(f"Kernel '{kernel}' is unimplemented. Similarity score will be based on WWLK.")
@@ -43,6 +42,12 @@ def amr_sim():
     else:
         file_to_run = '../src/main_wlk_wasser.py'
         logging.info(f"Running similarity kernel '{kernel}' using file '{file_to_run}'")
+        try:
+            config_filepath = info['config_filepath']
+            logging.info(f"Using embeddings specified in file '{config_filepath}'")
+        except:
+            config_filepath = None
+            logging.warning(f"No embedding configurations specified. Edge embeddings will be randomly instantiated, and node embeddings will come from Glove.")
     
     # prep files for ingestion into wwlk script
 
@@ -56,12 +61,15 @@ def amr_sim():
     amr2file.close()
     amr2filesize = os.path.getsize('amr2.txt')
 
-    process = subprocess.run(['python', file_to_run, '-a', 'amr1.txt', '-b', 'amr2.txt'], capture_output=True)
+    if config_filepath:
+        process = subprocess.run(['python', file_to_run, '-a', 'amr1.txt', '-b', 'amr2.txt', '-embedding_config_file', config_filepath], capture_output=True)    
+    else:
+        process = subprocess.run(['python', file_to_run, '-a', 'amr1.txt', '-b', 'amr2.txt'], capture_output=True)
 
     result = float(process.stdout.decode('UTF-8').strip())
 
     stop = time.time()
-    logging.info(f"Similarity between AMR1 ({amr1filesize} bytes) and AMR2 ({amr1filesize} bytes) generated in {stop - start} seconds.")
+    logging.info(f"Similarity between AMR1 ({amr1filesize} bytes) and AMR2 ({amr2filesize} bytes) generated in {stop - start} seconds.")
     
     os.remove('amr1.txt')
     os.remove('amr2.txt')
