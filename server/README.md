@@ -38,6 +38,6 @@ curl localhost:5000/ -H 'Content-Type: application/json' -d '{"kernel": "wwlk", 
 Using the example, you should get this exact response:
 
 ```
-{"score":-0.619}
+{"score":-0.142}
 ```
 
