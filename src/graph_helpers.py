@@ -1,7 +1,7 @@
 import logging
 import networkx as nx
 from smatchpp.data_helpers import PenmanReader
-from smatchpp.preprocess import GenericStandardizer
+from smatchpp.formalism.generic.tools import GenericStandardizer
 
 logger = logging.getLogger("penman")
 logger.setLevel(30)

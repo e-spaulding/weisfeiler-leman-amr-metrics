@@ -29,7 +29,7 @@ def build_arg_parser():
     parser.add_argument('-edge_param_keys_filepath'
             , type=str
             , help='filepath to edge param_keys \
-                    \{\'label\'\: index_from_edge_params_file}')
+                    {\'label\': index_from_edge_params_file}')
 
     parser.add_argument('-embedding_config_file'
             , type=str
@@ -165,20 +165,15 @@ if __name__ == "__main__":
         relation_type = "scalar"
         custom_edges=False
 
-    # string_amrs1 = dh.read_amr_file(amrfile1)
-    # graphs1, nodemap1 = gh.parse_string_amrs(string_amrs1, edge_to_node_transform=args.edge_to_node_transform)
-
-    ### UPDATED CODE
     graphfile1 = args.a
     graphfile2 = args.b
                 
-    prepro = amrsim.AmrWasserPreProcessorr(w2v_uri=args.w2v_uri, init=args.random_init_relation, use_custom_edge_embeddings=custom_edges,
+    prepro = amrsim.AmrWasserPreProcessor(w2v_uri=args.w2v_uri, init=args.random_init_relation, use_custom_edge_embeddings=custom_edges,
                                                 edge_params=edge_params, edge_param_keys=edge_param_keys, relation_type=relation_type)
     
     predictor = amrsim.WasserWLK(preprocessor=prepro, iters=args.k, stability=args.stability_level, 
                                                         communication_direction=args.communication_direction, prs=args.prs)
-    #####
-    
+
     if not args.fine_grained_scores:
 
         grapa = gh.GraphParser(input_format=args.input_format, 
@@ -218,16 +213,19 @@ if __name__ == "__main__":
 
     else:
         try:
-            from smatchpp.subgraph_extraction import AMRSubGraphExtractor
+            from smatchpp.formalism.amr.tools import AMRSubgraphExtractor
         except ModuleNotFoundError:
             raise ModuleNotFoundError("For subgraph-extraction please install smatchpp: pip install smatchpp")
         
-        subgraph_extractor = SubGraphExtractor()
+        subgraph_extractor = AMRSubgraphExtractor()
         grapa = gh.GraphParser(input_format=args.input_format, 
                                 edge_to_node_transform=args.edge_to_node_transform)
         
         string_graphs1 = dh.read_graph_file(graphfile1)
         graphs1 = grapa.string_graphs_to_triples(string_graphs1)
+        # print(graphs1)
+        # for graph in graphs1:
+        #     print(subgraph_extractor.all_subgraphs_by_name(graph))
         sgraphs1 = [subgraph_extractor.all_subgraphs_by_name(graph) for graph in graphs1]
 
         string_graphs2 = dh.read_graph_file(graphfile2)
@@ -236,7 +234,7 @@ if __name__ == "__main__":
         
         predss = []
         
-        amr_aspects = ["main"] + list(subgraph_extractor.amr_aspects.keys())
+        amr_aspects = list(subgraph_extractor.extractor.graph_aspects.keys())
         amr_aspects.remove("FOCUS")
 
         for i_a, aspect in enumerate(amr_aspects):
@@ -246,20 +244,20 @@ if __name__ == "__main__":
             graphs1, nodemap1 = grapa.list_with_triple_sets_to_list_with_graphs(graphs1triples)
             graphs2, nodemap2 = grapa.list_with_triple_sets_to_list_with_graphs(graphs2triples)
                 
-            if i_a == 0:
-                prepro = amrsim.AmrWasserPreProcessor(w2v_uri=args.w2v_uri, init=args.random_init_relation)
+            # if i_a == 0:
+                # prepro = amrsim.AmrWasserPreProcessor(w2v_uri=args.w2v_uri, init=args.random_init_relation)
             
             def get_scores():
                 
-                predictor = amrsim.WasserWLK(preprocessor=prepro, iters=args.k, stability=args.stability_level, 
-                                                        communication_direction=args.communication_direction, prs=args.prs)
+                # predictor = amrsim.WasserWLK(preprocessor=prepro, iters=args.k, stability=args.stability_level, 
+                                                        # communication_direction=args.communication_direction, prs=args.prs)
                 
                 preds = predictor.predict(graphs1, graphs2)
                 return preds
             
             def get_scores_alignments():
                 
-                predictor = amrsim.WasserWLK(preprocessor=prepro, iters=args.k, stability=args.stability_level)
+                # predictor = amrsim.WasserWLK(preprocessor=prepro, iters=args.k, stability=args.stability_level)
                 
                 preds, aligns = predictor.predict_and_align(graphs1, graphs2, nodemap1, nodemap2)
                 return preds, aligns
