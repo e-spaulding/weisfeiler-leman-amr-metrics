@@ -1,13 +1,14 @@
 import logging
 import multiprocessing
 import re
-import time
 import numpy as np
 from scipy.spatial.distance import cosine, cdist
 from scipy.stats import entropy
 from pyemd import emd_with_flow
 import gensim.downloader as api
 import networkx as nx
+
+np.random.seed(42)
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +242,8 @@ class AmrWasserPreProcessor(Preprocessor):
                 if key in self.wordvecs:
                     vecs.append(np.copy(self.wordvecs[key]))
         if vecs:
-            return np.max(vecs, axis=0)
+            return np.mean(vecs, axis=0)
+        
         
         if string.isnumeric():
             chars = list(string)
@@ -333,14 +335,14 @@ class AmrWasserPreProcessor(Preprocessor):
         
         elif self.init == "random_uniform":
             for _ in range(n):
-                params.append(np.random.uniform(0.20, 0.35, size=(d)))
+                params.append(np.random.uniform(0.2, 0.35, size=(1)))
             params = np.array(params)
         
         elif self.init == "min_entropy": 
             for _ in range(n):
                 sample = []
                 for _ in range(10):
-                    sample.append(np.random.uniform(0.20, 0.35, size=(d)))
+                    sample.append(np.random.uniform(0.2, 0.35, size=(1)))
                 entropies = []
                 for i in range(10):
                     entropies.append(
@@ -358,7 +360,7 @@ class NodeDistanceMatrixGenerator():
     and produces distance matrix"""
 
     def __init__(self, params=None, param_keys=None, 
-                    iters=2, communication_direction="both"):
+                    iters=2, communication_direction="both", prs="s"):
         """Intitalizes node embedding generatror
             
             Args:
@@ -379,9 +381,13 @@ class NodeDistanceMatrixGenerator():
             self.param_keys = {}
             self.unk_edge = 0.2
         else:
-            self.unk_edge = np.random.rand(self.params.shape[1]) 
+            try:
+                self.unk_edge = np.random.rand(self.params.shape[1]) 
+            except IndexError:
+                self.unk_edge = np.random.rand(1)
         self.iters = iters
         self.communication_direction = communication_direction
+        self.prs = prs
         return None
      
     def _wl_embed_single(self, graphtuple):
@@ -406,10 +412,14 @@ class NodeDistanceMatrixGenerator():
         
         e1, order1 = self.collect_graph_embed(a1)
         e2, order2 = self.collect_graph_embed(a2)
-        E1, E2 = self._WL_latent(a1, a2, iters=self.iters)
-        E1 = np.concatenate([e1, E1], axis=1)
-        E2 = np.concatenate([e2, E2], axis=1)
         
+        if self.iters > 0:
+            E1, E2 = self._WL_latent(a1, a2)
+            E1 = np.concatenate([e1, E1], axis=1)
+            E2 = np.concatenate([e2, E2], axis=1)
+        else:
+            E1, E2 = e1, e2 
+ 
         v1, v2, dists = self._get_emd_input(E1, E2)
         
         return dists, v1, v2, order1, order2
@@ -455,15 +465,31 @@ class NodeDistanceMatrixGenerator():
             - prior weights for nodes of B
             - cost matrix
         """
-
-        mat1 = mat1 / np.linalg.norm(mat1, axis=1)[:,None] 
-        mat2 = mat2 / np.linalg.norm(mat2, axis=1)[:,None]
+        
+        denom1 = np.linalg.norm(mat1, axis=1)[:,None] 
+        denom2 = np.linalg.norm(mat2, axis=1)[:,None]
+        
+        denom1 = np.where(denom1 != 0.0, denom1, 0.0001)
+        denom2 = np.where(denom2 != 0.0, denom2, 0.0001)
+        
+        mat1 = mat1 / denom1
+        mat2 = mat2 / denom2
         
         # construct prior weights of nodes... all are set equal here
         v1 = np.concatenate([np.ones(mat1.shape[0]), np.zeros(mat2.shape[0])])
         v2 = np.concatenate([np.zeros(mat1.shape[0]), np.ones(mat2.shape[0])])
-        v1 = v1 / sum(v1)
-        v2 = v2 / sum(v2)
+        
+        denom1 = sum(v1)
+        denom2 = sum(v2)
+
+        v1 = v1 / denom1
+        v2 = v2 / denom2
+        
+        if self.prs == "p":
+            v2 = v2 * denom2
+        if self.prs == "r":
+            v1 = v1 * denom1
+
         
         # build cost matrix
         dist_mat = np.zeros(shape=(len(v1), len(v1)), dtype=np.double)
@@ -510,6 +536,9 @@ class NodeDistanceMatrixGenerator():
         for node in nx_latent.nodes:
             vecs.append(nx_latent.nodes[node]["latent"])
             labels.append(node)
+        if not labels:
+            labels = ["null_graph"]
+            vecs.append(np.zeros(100))
         return np.array(vecs), labels
 
     def maybe_has_param(self, label):
@@ -600,9 +629,10 @@ class NodeDistanceMatrixGenerator():
         self._communicate(nx_g2_latent)
         mat1, _ = self.collect_graph_embed(nx_g1_latent)
         mat2, _ = self.collect_graph_embed(nx_g2_latent)
+
         return mat1, mat2
 
-    def _WL_latent(self, nx_g1_latent, nx_g2_latent, iters=2):
+    def _WL_latent(self, nx_g1_latent, nx_g2_latent):
         """apply K WL iteration and get node embeddings for two graphs A and B
 
         Args:
@@ -616,10 +646,11 @@ class NodeDistanceMatrixGenerator():
 
         v1s = []
         v2s = []
-        for _ in range(iters):
+        for _ in range(self.iters):
             x1_mat, x2_mat = self._wl_iter_latent(nx_g1_latent, nx_g2_latent)
             v1s.append(x1_mat)
             v2s.append(x2_mat)
+        
         g_embed1 = np.concatenate(v1s, axis=1)
         g_embed2 = np.concatenate(v2s, axis=1)
         return g_embed1, g_embed2
@@ -645,9 +676,13 @@ class EmSimilarity():
         dists, v1, v2 = data
         
         #compute wmd
-        emd, flow = emd_with_flow(v1, v2, dists)
+        emd, flow = emd_with_flow(v1, v2, dists, extra_mass_penalty=0.0)
         
-        return (emd * -1, flow)
+        #change to similarity in -1, 1
+        ems = emd * -1
+        ems += 1
+
+        return (ems, flow)
 
     def ems_multi(self, distss, v1s, v2s, parallel=False):
         
@@ -677,9 +712,24 @@ class EmSimilarity():
         return preds
 
 
-class AmrWasserPredictor(GraphSimilarityPredictorAligner):
+class WasserWLK(GraphSimilarityPredictorAligner):
 
-    def __init__(self, preprocessor, iters=2, stability=0, communication_direction="both"):
+    def __init__(self, preprocessor, iters=2, stability=0, communication_direction="both", prs="s"):
+        """Initializes Wasserstein Weisfeiler Leman Kernel
+
+        Args:
+            preprocessor (Preprocessor): an object that assigns embeddings 
+                                        to graph nodes and labels
+            iters (int): K
+            stability (int): in case there is randomness in pre-processing 
+                             (e.g., random embeddings for node labels not found in word2vec)
+                            then we compute an expected distance matrix by repeated sampling
+            communication_direction (string): communication direction in which messages are passed
+            prs (string): precision, recall, or similarity
+        
+        Returns:
+            None
+        """
 
         self.preprocessor = preprocessor
         self.iters = iters
@@ -687,7 +737,7 @@ class AmrWasserPredictor(GraphSimilarityPredictorAligner):
         self.wl_dist_mat_generator = None
         self.stability = stability
         self.communication_direction = communication_direction
-
+        self.prs = prs
         return None
     
     def _gen_dist_mats(self, graphs1, graphs2):
@@ -706,7 +756,7 @@ class AmrWasserPredictor(GraphSimilarityPredictorAligner):
             self.wl_dist_mat_generator = NodeDistanceMatrixGenerator(params=params, 
                                                                     param_keys=param_keys, 
                                                                     iters=self.iters,
-                                                                    communication_direction=self.communication_direction)
+                                                                    communication_direction=self.communication_direction, prs=self.prs)
 
         # no WL generator ready, create WL generator
         if self.wl_dist_mat_generator == None:
@@ -715,7 +765,7 @@ class AmrWasserPredictor(GraphSimilarityPredictorAligner):
             self.wl_dist_mat_generator = NodeDistanceMatrixGenerator(params=params, 
                                                                     param_keys=param_keys, 
                                                                     iters=self.iters,
-                                                                    communication_direction=self.communication_direction)
+                                                                    communication_direction=self.communication_direction, prs=self.prs)
         
         # init node embeddings
         self.preprocessor.transform(graphs1, graphs2)
@@ -778,11 +828,15 @@ class AmrWasserPredictor(GraphSimilarityPredictorAligner):
             align_dict = {} 
             # project alignment to orig AMR graphs
             for j, label in enumerate(order1):
+                if label == "null_graph":
+                    break
                 align_dict[node2nodeorig_1[i][label]] = {}
                 cutv = len(order1)
                 row = flow[j][cutv:]
                 cost_row = dist_mat[j][cutv:]
                 for k, num in enumerate(row):
+                    if order2[k] == "null_graph":
+                        break
                     if num > 0.0:
                         varnode1 = node2nodeorig_1[i][label]
                         varnode2 = node2nodeorig_2[i][order2[k]]
@@ -819,7 +873,7 @@ class AmrWasserPredictor(GraphSimilarityPredictorAligner):
         return preds
 
 
-class AmrSymbolicPredictor(GraphSimilarityPredictor):
+class WLK(GraphSimilarityPredictor):
     
     def __init__(self, simfun='cosine', iters=2, communication_direction="both"):
         self.simfun = simfun
