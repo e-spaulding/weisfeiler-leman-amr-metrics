@@ -2,7 +2,11 @@
 
 The repository contains python code for metrics of AMR graph similarity.
 
-**New in Version 0.2**: faster, more parameters, increase stabiltiy.
+**New in Version 0.2**: faster, more options, increase stabiltiy, other graph formats.
+
+**New in Version 0.3**: asymmetric Wasserstein graph measures as described in our [amr4nli paper](https://arxiv.org/abs/2306.00936) is now available.
+
+**New in Version 0.4**: Reduced dependencies, aspect measures for *cause, location, quantifier, ...*
 
 ## Requirements
 
@@ -13,36 +17,47 @@ numpy (tested: 1.19.4)
 scipy (tested: 1.1.0) 
 networkx (tested: 2.5)
 gensim (tested: 3.8.3)
-penman (tested 1.1.0)
+smatchpp (tested: 1.5.1)
+pyemd (tested: 0.5.1)
 ```
 
 ## Computing AMR metrics
 
 ### Basic Wasserstein AMR similarity
 
+```
+python src/main_wlk_wasser.py -a <amr_file> -b <amr_file>
+```
+
 Note that the node labels will get initialized with GloVe vectors, 
 it can take a minute to load them. If everything should be randomly intitialzed 
 (no loading time), set `-w2v_uri none`.
 
-```
-cd src
-python main_wlk_wasser.py -a <amr_file> -b <amr_file>
-```
-
 ### Return AMR n:m alignment:
 
 ```
-cd src
-python main_wlk_wasser.py -a <amr_file> -b <amr_file> -output_type score_alignment
+python src/main_wlk_wasser.py -a <amr_file> -b <amr_file> -output_type score_alignment
 ```
 
 This prints the scores and many-many node alignments, with flow and cost information. 
 
+### Return scores for sub-graph aspects (location, cause, named entity, ...):
+
+```
+python src/main_wlk_wasser.py -a <amr_file> -b <amr_file> --fine_grained_scores
+```
+
+### Asymmetric similarity
+
+Asymmetric wasserstein graph similarity (check if g1 is a subgraph of g2), as described in our [amr4nli paper](https://arxiv.org/abs/2306.00936) is now available with options:
+
+- `-prs p` for precision-like sub-graph measure
+- `-prs r` for recall-like super-graph measure
+
 ### Learning edge weights
 
 ```
-cd src
-python main_wlk_wasser_optimized.py -a_train <amr_file> -b_train <amr_file> \
+python src/main_wlk_wasser_optimized.py -a_train <amr_file> -b_train <amr_file> \
                                     -a_dev <amr_file> -b_dev <amr_file> \
                                     -a_test <amr_file> -b_test <amr_file> \
                                     -y_train <target_file> -y_dev <target_file>
@@ -56,11 +71,10 @@ optimize the parameters. In the end the script will return predictions for
 ### Symbolic (Structural) AMR similarity
 
 ```
-cd src
-python main_wlk.py -a <amr_file> -b <amr_file>
+python src/main_wlk.py -a <amr_file> -b <amr_file>
 ```
 
-## Tips
+## Notes
 
 ### Increase numerical stability
 
@@ -70,30 +84,51 @@ it can lead to some variation in the predictions. More stable results for WWLK a
 consider using the new `-stability_level` parameter, e.g.:
 
 ```
-cd src
-python main_wlk_wasser.py -a <amr_predicted> -b <amr_ref> \
+python src/main_wlk_wasser.py -a <amr_predicted> -b <amr_ref> \
                           -stability_level 15
 ```
 
+It computes an expected contextualized node distance matrix by repeated sampling of any unknown random parameters (`-stability_level n` samples), before calculating the Wasserstein distance.
+
 ### Parsing evaluation
 
-Use `-stability_level` for increased stability (as above). And a corpus score (currently, only output option is the mean over all scores). A good option for parsing evaluation may be:
+Use `-stability_level` for increased stability when using wasser wlk (as above). And calculate a corpus score (currently, only output option is the mean over all scores). A good option for parsing evaluation may be:
 
 ```
-python -u m2ain_wlk_wasser.py -a <amr_predicted> -b <amr_ref> \
+python -u src/main_wlk_wasser.py -a <amr_predicted> -b <amr_ref> \
                               -output_type score_corpus \
-                              -stability_level 15 -k 2 \
-                              -random_init_relation constant \
+                              -stability_level 15 -k 3 \
+                              -random_init_relation ones \
                               --edge_to_node_transform 
 ```
 
 This also transforms the graphs to (equivalent) graphs with unlabeled edges (see below), and lets us set constant edge weights.
 
+Enable `--fine_grained_scores` to retrieve sub-aspect scores.
 
+### Processing graphs other than AMR
 
-### Important Parameters
+You can use the metrics for comparing/aligning other graph-based meaning representations, and node-labeled graphs in general.
 
-Some important parameters that can be set according to use-case
+For graphs other than AMR use `-input_format tsv`. Then you can input files with tab or whitespace speparated triples. An empty line indicates begin of another graph. The general format is `<src_node_id> <tgt_node_id> <relation_label>`, node labels are indicated with `:instance` triples. A graph looks similar to:
+
+```
+n1 n2 :rel_a
+n2 n3 :rel_b
+n1 label_n1 :instance
+n2 label_n2 :instance
+n3 label_n3 :instance
+```
+
+This graph contains 3 nodes and 2 edges, all edges and nodes have labels. That's it!
+
+### Score range
+
+For convenience, score range is now in [-1, 1] for minimum similarity (-1) and maximum similarity (1).
+
+### Important Options
+
+Some important options that can be set according to use-case
 
 - `-w2v_uri <string>`: use different word embeddings (FastText, word2vec, etc.). Current default: `glove-wiki-gigaword-100`.
 - `-k <int>`: Use an int to specify the maximum contextualization level. E.g., If k=5, a node will receive info from nbs that are up to 5 hops away.
@@ -102,30 +137,16 @@ Some important parameters that can be set according to use-case
 - `--edge_to_node_transform`: This flag transforms the edge-labeled AMR graph into an (equivalent) graph with unlabeled edges. E.g., (1, arg1, 2), (1, arg2, 3) --> (1, 4), (1, 5), (4, 2), (5, 3), where 4 has label arg1 and 5 has label arg2.
 
 
-There are also more arguments that can be set, you can check more options out:
+More options can be checked out:
 
 ```
-cd src
-python main_wlk_wasser.py --help
+python src/main_wlk_wasser.py --help
 ```
 
 ### Benchmarking
 
-Some scores on BAMBOO of current constellations: see `info/`
+Some scores on BAMBOO of current configurations: see `info/`
 
-Approx Processing TIME 1000 graph pairs: 
-
-| method | time (seconds) |
-|  ----  |  ------------- |
-| WLK    | 0.5            |
-| WWLK   | 5              |
-
-1000 graph pairs WWLK need 5 seconds
-
-## Version notes
-
-- 0.1: initial release
-- 0.2: speed increase by making better use of numpy, more stability by distance matrix sampling, labeled to unlabeld graph transform, refactored code
 
 ## Citation
 

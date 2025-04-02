@@ -1,34 +1,77 @@
 import logging
 import networkx as nx
-import penman
+from smatchpp.data_helpers import PenmanReader
+from smatchpp.formalism.generic.tools import GenericStandardizer
+
 logger = logging.getLogger("penman")
 logger.setLevel(30)
 
 
-def parse_string_amrs(string_penman_amrs, edge_to_node_transform=False):
-    """builds nx medi graphs from amr sembank.
-    
-    Args:
-        string_penman_amrs (list): contains AMR graphs, i.e.
-                                ["(x / ... :a (...))"], "(..."]
+class GraphParser():
 
-        add_coref_to_labels (bool): if true then add (redundant) 
-                                    coref info to node labels (default: False)
+    def __init__(self, input_format="penman", edge_to_node_transform=False
+                    , remove_artificial_root=True, remove_duplicates=True, lower=True):
+        
+        if input_format not in ["penman", "tsv"]:
+            raise ValueError("input_format={} not a valid option".format(input_format))
 
-    Returns:
-        - list with nx multi edge di graph where nodes are ids and nodes and 
-            labels carry attribute
-        - list with dicts that contain node id --> original AMR variable mappings
-    """
-    
-    amrs = [stringamr2graph(s) for s in string_penman_amrs]
-    triples = [graph2triples(G) for G in amrs]
-    graphs_nm = [amrtriples2nxmedigraph(tx, edge_to_node_transform) for tx in triples]
-    graphs = [elm[0] for elm in graphs_nm]
-    node_map = [elm[1] for elm in graphs_nm]
+        self.input_format = input_format
+        self.edge_to_node_transform = edge_to_node_transform
+        self.remove_artificial_root = remove_artificial_root
+        self.remove_duplicates = remove_duplicates
+        self.lower = lower
 
-    return graphs, node_map
+        return None
 
+    def string_graphs_to_triples(self, string_graphs):
+
+        if self.input_format == "penman":
+            pr = PenmanReader()
+            st = GenericStandardizer()
+            tripless = [pr.string2graph(s) for s in string_graphs]
+            tripless = [st.standardize(t) for t in tripless]
+        
+        if self.input_format == "tsv":
+            tripless = [tsv2triples(s) for s in string_graphs]
+            tripless = [maybe_fix_if_concept_node_same_as_var_node(triples) for triples in tripless]
+        
+        if self.remove_artificial_root:
+            tripless = [[triple for triple in triples if ":root" not in triple] for triples in tripless]
+        
+        if self.lower:
+            tripless = [[(t[0].lower(), t[1].lower(), t[2].lower()) for t in triples] for triples in tripless]
+        
+        if self.remove_duplicates:
+            tripless = [list(set(triples)) for triples in tripless]
+        
+        return tripless
+        
+    def list_with_triple_sets_to_list_with_graphs(self, tripless):
+        graphs_nm = [amrtriples2nxmedigraph(triples, self.edge_to_node_transform) for triples in tripless]
+        graphs = [elm[0] for elm in graphs_nm]
+        node_map = [elm[1] for elm in graphs_nm]
+        return graphs, node_map
+
+    def parse(self, string_graphs):
+        
+        #read triples
+        tripless = self.string_graphs_to_triples(string_graphs)
+        
+        # generate (g,m) networkx graphs from triples
+        # g is a node-labeled and edge-labeled multi-edge networkx graph
+        # and m is a map from node ids to networkx node ids to original node names
+        graphs, node_map = self.list_with_triple_sets_to_list_with_graphs(tripless)
+
+        return graphs, node_map
+
+def maybe_fix_if_concept_node_same_as_var_node(triples):
+    #handle potential cases where vaiable names in AMR are also concept names
+    #almost never happens, but some parsers do this once in a while, need to take 
+    # care of this
+    for i, tr in enumerate(triples):
+        if tr[1] == ":instance" and tr[0] == tr[2]:
+            triples[i] = (tr[0], tr[1], tr[2] + "-") 
+    return triples
 
 def amrtriples2nxmedigraph(triples, edge_to_node_transform=False):
     """builds nx medi graph from amr triples.
@@ -105,8 +148,11 @@ def add_edges(G, triples, src_tgt_index_map):
     """
 
     for tr in triples:
-        src = src_tgt_index_map[tr[0]]
-        label = tr[1]
+        try:
+            src = src_tgt_index_map[tr[0]]
+            label = tr[1]
+        except KeyError:
+            continue
         try:
             tgt = src_tgt_index_map[tr[2]]
         except KeyError:
@@ -150,6 +196,7 @@ def reify_nodes(triples):
         del triples[i]
     return None
 
+
 def do_edge_node_transform(triples):
     # constant nodes are targets with no outgoing edge (leaves) 
     # that don't have an incoming :instance edge
@@ -175,9 +222,11 @@ def do_edge_node_transform(triples):
         del triples[i]
     return None
 
-
 def stringamr2graph(string):
-    """uses penman to convert serialized AMR to penman graph
+    """
+    DEPRECATED
+
+    uses penman to convert serialized AMR to penman graph
     
     Args:
         string (str): serialized AMR '(n / concept :arg1 ()...)'
@@ -185,25 +234,50 @@ def stringamr2graph(string):
     Returns:
         penman graph object
     """
-    
     #decode
     g = penman.decode(string)
     
-    #handle potential cases where vaiable names in AMR are also concept names
-    for i, tr in enumerate(g.triples):
-        if tr[1] == ":instance" and tr[0] == tr[2]:
-            g.triples[i] = (tr[0], tr[1], tr[2] + "_")    
     return g
 
+def tsv2triples(string):
+    """Parses tsv graph to triples
+    
+    Args:
+        string (str): tsv graph e.g.
+                    
+                    x         y         :edge_1
+                    y         z         :edge_2
+                    z         x         :edge_3
+                    x         dog       :instance
+                    y         cat       :instance
+                    z         like      :instance
+                    
+                    defines a graph between source and target nodes with edge 
+                    labels. Node labels are indicated with special :instance edge
+                   
+    Returns:
+        triples
+    """ 
+    
+    triples =  [l for l in string.split("\n") if l]
+    
+    if "\t" in triples[0]:
+        triples = [t.split("\t") for t in triples]
+    else:
+        triples = [t.split() for t in triples]
+    
+    triples = [(t[0], t[2], t[1]) for t in triples]
+    return triples
 
-def triples2graph(triples):
+""" DEPRECATED
+def triples2penmangraph(triples):
     return penman.Graph(triples)
 
 
-def graph2triples(G):
+def penmangraph2triples(G):
     tr = G.triples
     return tr
-
+"""
 
 def get_var_concept_map(triples):
     """creates a dictionary that maps varibales to their concepts
